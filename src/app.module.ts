@@ -5,6 +5,7 @@ import { AccountModule } from './account/account.module';
 import { AuthModule } from './auth/auth.module';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { TranslationModule } from './translation/translation.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { APP_GUARD } from '@nestjs/core';
     PrismaModule,
     AccountModule,
     AuthModule,
+    TranslationModule,
   ],
   providers: [
     {
