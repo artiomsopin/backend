@@ -24,6 +24,10 @@ export class TranslationGateway
   @WebSocketServer()
   private server: any;
 
+  // Store connected speechmatics sessions using the wsClient ID as key
+  private speechmaticsSessions: Map<string, RealtimeSession> = new Map();
+
+  // Configuration
   private readonly SPEECHMATICS_API_KEY = process.env.SPEECHMATICS_API_KEY;
   private readonly OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -58,8 +62,8 @@ export class TranslationGateway
     let transcriptBuffer = '';
 
     // Variables to store language settings
-    const sourceLang: string = 'en';
-    const targetLang: string = 'ua';
+    let sourceLang: string = 'en';
+    let targetLang: string = 'ua';
 
     console.log('Message received:', data);
 
@@ -97,177 +101,201 @@ export class TranslationGateway
             wsClient.disconnect();
             return;
           }
-        }
 
-        // Create a RealtimeSession for interacting with Speechmatics
-        const speechmaticsSession: RealtimeSession = new RealtimeSession(
-          assignedKey,
-        );
-
-        // RealtimeSession event handlers
-        speechmaticsSession.addListener('RecognitionStarted', () => {
-          console.log('RecognitionStarted');
-          wsClient.send(
-            JSON.stringify({ type: 'status', message: 'RecognitionStarted' }),
+          // Create a RealtimeSession for interacting with Speechmatics
+          const speechmaticsSession: RealtimeSession = new RealtimeSession(
+            assignedKey,
           );
-        });
 
-        speechmaticsSession.addListener('Error', (error) => {
-          console.error('Session error:', error);
-          wsClient.send(
-            JSON.stringify({ type: 'error', message: error.message }),
-          );
-        });
-
-        speechmaticsSession.addListener('AddTranscript', async (message) => {
-          const transcript: string = message.metadata.transcript;
-          console.log('AddTranscript:', transcript);
-          wsClient.send(JSON.stringify({ type: 'transcript', transcript }));
-
-          // Add transcription to the buffer
-          transcriptBuffer += ' ' + transcript;
-
-          // Extract completed sentences from the buffer
-          const { completeSentences, remainingBuffer }: ExtractSentencesResult =
-            this.extractSentences(transcriptBuffer);
-
-          if (completeSentences) {
+          // RealtimeSession event handlers
+          speechmaticsSession.addListener('RecognitionStarted', () => {
+            console.log('RecognitionStarted');
             wsClient.send(
-              JSON.stringify({
-                type: 'translation_status',
-                message: 'Translating...',
-              }),
+              JSON.stringify({ type: 'status', message: 'RecognitionStarted' }),
             );
-
-            try {
-              const translatedText = await this.translateTextStream(
-                completeSentences.trim(),
-                sourceLang,
-                targetLang,
-              );
-              console.log('Translation:', translatedText);
-              wsClient.send(
-                JSON.stringify({
-                  type: 'translation',
-                  translation: translatedText,
-                }),
-              );
-
-              wsClient.send(
-                JSON.stringify({
-                  type: 'translation_status',
-                  message: 'Translation complete',
-                }),
-              );
-
-              // Update buffer with incomplete fragments
-              transcriptBuffer = remainingBuffer.trim();
-
-              //TODO: add user charge
-              // Charge for translation (e.g., 0.01 units)
-              //await chargeUser(userPublicKey, 0.02);
-            } catch (error) {
-              console.error('Error translating transcript:', error);
-              wsClient.send(
-                JSON.stringify({
-                  type: 'error',
-                  message: 'Failed to translate transcript',
-                }),
-              );
-            }
-          }
-        });
-
-        speechmaticsSession.addListener('EndOfTranscript', async () => {
-          console.log('EndOfTranscript');
-          wsClient.send(
-            JSON.stringify({ type: 'status', message: 'EndOfTranscript' }),
-          );
-
-          // Translate the remaining buffer
-          if (transcriptBuffer.trim().length > 0) {
-            wsClient.send(
-              JSON.stringify({
-                type: 'translation_status',
-                message: 'Translating...',
-              }),
-            );
-
-            try {
-              const translatedText = await this.translateTextStream(
-                transcriptBuffer.trim(),
-                sourceLang,
-                targetLang,
-              );
-              console.log('Translation:', translatedText);
-              wsClient.send(
-                JSON.stringify({
-                  type: 'translation',
-                  translation: translatedText,
-                }),
-              );
-
-              wsClient.send(
-                JSON.stringify({
-                  type: 'translation_status',
-                  message: 'Translation complete',
-                }),
-              );
-
-              // Clear the buffer
-              transcriptBuffer = '';
-
-              // Charge for translation
-              //await chargeUser(userPublicKey, 0.02);
-            } catch (error) {
-              console.error('Error translating transcript:', error);
-              wsClient.send(
-                JSON.stringify({
-                  type: 'error',
-                  message: 'Failed to translate transcript',
-                }),
-              );
-            }
-          }
-        });
-
-        try {
-          await speechmaticsSession.start({
-            transcription_config: {
-              language: sourceLang,
-              operating_point: 'enhanced',
-              enable_partials: true,
-              max_delay: 2,
-            },
-            audio_format: {
-              type: 'raw',
-              encoding: 'pcm_s16le',
-              sample_rate: 16000,
-            },
           });
-          console.log('Transcription session started');
-        } catch (error) {
-          console.error('Error starting transcription session:', error);
-          wsClient.send(
-            JSON.stringify({
-              type: 'error',
-              message: 'Failed to start transcription session',
-            }),
+
+          speechmaticsSession.addListener('Error', (error) => {
+            console.error('Session error:', error);
+            wsClient.send(
+              JSON.stringify({ type: 'error', message: error.message }),
+            );
+          });
+
+          speechmaticsSession.addListener('AddTranscript', async (message) => {
+            const transcript: string = message.metadata.transcript;
+            console.log('AddTranscript:', transcript);
+            wsClient.send(JSON.stringify({ type: 'transcript', transcript }));
+
+            // Add transcription to the buffer
+            transcriptBuffer += ' ' + transcript;
+
+            // Extract completed sentences from the buffer
+            const {
+              completeSentences,
+              remainingBuffer,
+            }: ExtractSentencesResult = this.extractSentences(transcriptBuffer);
+
+            if (completeSentences) {
+              wsClient.send(
+                JSON.stringify({
+                  type: 'translation_status',
+                  message: 'Translating...',
+                }),
+              );
+
+              try {
+                const translatedText = await this.translateTextStream(
+                  completeSentences.trim(),
+                  sourceLang,
+                  targetLang,
+                );
+                console.log('Translation:', translatedText);
+                wsClient.send(
+                  JSON.stringify({
+                    type: 'translation',
+                    translation: translatedText,
+                  }),
+                );
+
+                wsClient.send(
+                  JSON.stringify({
+                    type: 'translation_status',
+                    message: 'Translation complete',
+                  }),
+                );
+
+                // Update buffer with incomplete fragments
+                transcriptBuffer = remainingBuffer.trim();
+
+                //TODO: add user charge
+                // Charge for translation (e.g., 0.01 units)
+                //await chargeUser(userPublicKey, 0.02);
+              } catch (error) {
+                console.error('Error translating transcript:', error);
+                wsClient.send(
+                  JSON.stringify({
+                    type: 'error',
+                    message: 'Failed to translate transcript',
+                  }),
+                );
+              }
+            }
+          });
+
+          speechmaticsSession.addListener('EndOfTranscript', async () => {
+            console.log('EndOfTranscript');
+            wsClient.send(
+              JSON.stringify({ type: 'status', message: 'EndOfTranscript' }),
+            );
+
+            // Translate the remaining buffer
+            if (transcriptBuffer.trim().length > 0) {
+              wsClient.send(
+                JSON.stringify({
+                  type: 'translation_status',
+                  message: 'Translating...',
+                }),
+              );
+
+              try {
+                const translatedText = await this.translateTextStream(
+                  transcriptBuffer.trim(),
+                  sourceLang,
+                  targetLang,
+                );
+                console.log('Translation:', translatedText);
+                wsClient.send(
+                  JSON.stringify({
+                    type: 'translation',
+                    translation: translatedText,
+                  }),
+                );
+
+                wsClient.send(
+                  JSON.stringify({
+                    type: 'translation_status',
+                    message: 'Translation complete',
+                  }),
+                );
+
+                // Clear the buffer
+                transcriptBuffer = '';
+
+                // TODO: Charge for translation
+                //await chargeUser(userPublicKey, 0.02);
+              } catch (error) {
+                console.error('Error translating transcript:', error);
+                wsClient.send(
+                  JSON.stringify({
+                    type: 'error',
+                    message: 'Failed to translate transcript',
+                  }),
+                );
+              }
+            }
+          });
+
+          try {
+            await speechmaticsSession.start({
+              transcription_config: {
+                language: sourceLang,
+                operating_point: 'enhanced',
+                enable_partials: true,
+                max_delay: 2,
+              },
+              audio_format: {
+                type: 'raw',
+                encoding: 'pcm_s16le',
+                sample_rate: 16000,
+              },
+            });
+            console.log('Transcription session started');
+          } catch (error) {
+            console.error('Error starting transcription session:', error);
+            wsClient.send(
+              JSON.stringify({
+                type: 'error',
+                message: 'Failed to start transcription session',
+              }),
+            );
+            wsClient.disconnect();
+            //TODO: implement releaseSpeechmaticsKey;
+            //releaseSpeechmaticsKey(assignedKey);
+            return;
+          }
+
+          // Save session in the client for further use
+          this.speechmaticsSessions.set(wsClient.id, speechmaticsSession);
+        } else if (message.type === 'language_settings') {
+          sourceLang = message.sourceLanguage || 'en';
+          targetLang = message.targetLanguage || 'ua';
+          console.log(
+            `Languages set: source - ${sourceLang}, target - ${targetLang}`,
           );
-          wsClient.disconnect();
-          //TODO: implement releaseSpeechmaticsKey;
-          //releaseSpeechmaticsKey(assignedKey);
-          return;
+        } else {
+          // Handle other message types
         }
-        // Save session in the client for further use
-        //wsClient.session = speechmaticsSession;
       } else {
-        // if (wsClient.session) {
-        // }
+        // Handle audio data
+        if (wsClient.id && this.speechmaticsSessions.has(wsClient.id)) {
+          try {
+            const speechmaticSession: RealtimeSession =
+              this.speechmaticsSessions.get(wsClient.id);
+            speechmaticSession.sendAudio(Buffer.from(data));
+          } catch (error) {
+            console.error('Error sending audio:', error);
+            wsClient.send(
+              JSON.stringify({
+                type: 'error',
+                message: 'Failed to send audio data',
+              }),
+            );
+          }
+        }
       }
     }
   }
-
   extractSentences(buffer: string): ExtractSentencesResult {
     // Use the sbd library to accurately split sentences
     const sentences: string[] = sbd.sentences(buffer, {
