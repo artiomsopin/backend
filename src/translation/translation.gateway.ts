@@ -44,8 +44,16 @@ export class TranslationGateway
     console.log('Extension connected to server');
   }
 
-  handleDisconnect() {
+  // Handle disconnections
+  handleDisconnect(wsClient: Socket) {
     console.log('Extension disconnected from server');
+    if (this.speechmaticsSessions.has(wsClient.id)) {
+      const speechmaticsSession: RealtimeSession =
+        this.speechmaticsSessions.get(wsClient.id);
+      speechmaticsSession.stop();
+      // Delete the session from the map
+      this.speechmaticsSessions.delete(wsClient.id);
+    }
   }
 
   //Handle messages from the client
