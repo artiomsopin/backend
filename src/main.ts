@@ -2,9 +2,18 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import * as fs from 'fs'; // Import the 'fs' module
+import path from 'path';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // SSL setup
+  const httpsOptions = {
+    key: fs.readFileSync(process.env.PRIVATE_KEY_PATH),
+    cert: fs.readFileSync(process.env.CERTIFICATE_PATH),
+    passphrase: process.env.PASSPHRASE,
+  };
+
+  const app = await NestFactory.create(AppModule, { httpsOptions });
   // TODO: improve logger
   app.useLogger(new Logger());
   app.enableCors();
