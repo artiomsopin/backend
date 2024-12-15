@@ -11,11 +11,12 @@ import { AccountEntity } from './entity/account.entity';
 
 @Injectable()
 export class AccountService {
+  // TODO: Transfer
   //HACK: use something like redis
   private accountCandidates: AccountCandidates[] = [];
 
   constructor(private prisma: PrismaService) {}
-
+  // TODO: Transfer
   async generateNonceForPublicKey(
     dto: GetNonceDto,
   ): Promise<AccountCandidates> {
@@ -33,7 +34,7 @@ export class AccountService {
       nonce,
     };
   }
-
+  // TODO: Transfer
   async validateSignature(dto: ValidateSignatureDto) {
     const candidate = this.findCandidate(dto.publicKey);
     if (!candidate) {
@@ -73,6 +74,7 @@ export class AccountService {
     });
   }
 
+  // TODO: Transfer
   private generateNonce(): string {
     const payload = randomBytes(32).toString('hex');
     return `insight: ${payload}`;
