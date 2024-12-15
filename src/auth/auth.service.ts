@@ -18,7 +18,9 @@ export class AuthService {
     private accountService: AccountService,
     private jwtService: JwtService,
   ) {}
+  //TODO: Implement with Nest cache manager
   private accountCandidates: AccountCandidates[] = [];
+
   async verify(dto: VerifyDto): Promise<Verify> {
     const account = await this.validateSignature(dto);
     if (!account) {
@@ -71,24 +73,19 @@ export class AuthService {
     }
   }
 
-  private generateAccessToken(payload: any) {
+  private generateAccessToken(payload: any): string {
     return this.jwtService.sign(payload, {
       expiresIn: '2m',
     });
   }
 
-  private generateRefreshToken(payload: any) {
+  private generateRefreshToken(payload: any): string {
     return this.jwtService.sign(payload, {
       expiresIn: '30d',
     });
   }
 
-  private generateNonce(): string {
-    const payload = randomBytes(32).toString('hex');
-    return `insight: ${payload}`;
-  }
-
-  private findCandidate(publicKey: string) {
+  private findCandidate(publicKey: string): AccountCandidates {
     return this.accountCandidates.find(
       (account) => account.publicKey === publicKey,
     );
@@ -135,5 +132,10 @@ export class AuthService {
       publicKey: dto.publicKey,
       nonce,
     };
+  }
+
+  private generateNonce(): string {
+    const payload = randomBytes(32).toString('hex');
+    return `insight: ${payload}`;
   }
 }
