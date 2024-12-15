@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { AccountService } from 'src/account/account.service';
 import { VerifyDto } from './dto/verify.dto';
@@ -9,17 +9,18 @@ import { randomBytes } from 'crypto';
 import { ValidateSignatureDto } from './dto/validate-signature.dto';
 import bs58 from 'bs58';
 import { sign } from 'tweetnacl';
-import { AccountCandidates } from './dto/account-candidates.interface';
+import { AccountCandidates } from './interfaces/account-candidates.interface';
 import { GetNonceDto } from './dto/get-nonce.dto';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 
 @Injectable()
 export class AuthService {
   constructor(
     private accountService: AccountService,
     private jwtService: JwtService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
-  //TODO: Implement with Nest cache manager
-  private accountCandidates: AccountCandidates[] = [];
 
   async verify(dto: VerifyDto): Promise<Verify> {
     const account = await this.validateSignature(dto);
@@ -85,21 +86,20 @@ export class AuthService {
     });
   }
 
-  private findCandidate(publicKey: string): AccountCandidates {
-    return this.accountCandidates.find(
-      (account) => account.publicKey === publicKey,
-    );
+  // TODO: delete for straight using in methods
+  private async getNonceByPublicKey(publicKey: string): Promise<string> {
+    return await this.cacheManager.get(publicKey);
   }
 
   private async validateSignature(dto: ValidateSignatureDto) {
-    const candidate = this.findCandidate(dto.publicKey);
-    if (!candidate) {
+    const nonce: string = await this.cacheManager.get(dto.publicKey);
+    if (!nonce) {
       throw new BadRequestException('Candidate not found');
     }
 
     const publicKeyUint8 = bs58.decode(dto.publicKey);
     const signatureUint8 = bs58.decode(dto.signature);
-    const msgUint8 = new TextEncoder().encode(candidate.nonce);
+    const msgUint8 = new TextEncoder().encode(nonce);
 
     const isValid = sign.detached.verify(
       msgUint8,
@@ -112,22 +112,22 @@ export class AuthService {
     }
 
     return {
-      publicKey: candidate.publicKey,
+      publicKey: dto.publicKey,
     };
   }
 
   private async generateNonceForPublicKey(
     dto: GetNonceDto,
   ): Promise<AccountCandidates> {
-    const exists = this.findCandidate(dto.publicKey);
-    if (exists) {
+    const existingNonce: string = await this.getNonceByPublicKey(dto.publicKey);
+    if (existingNonce) {
       return {
-        publicKey: exists.publicKey,
-        nonce: exists.nonce,
+        publicKey: dto.publicKey,
+        nonce: existingNonce,
       };
     }
-    const nonce = this.generateNonce();
-    this.accountCandidates.push({ publicKey: dto.publicKey, nonce });
+    const nonce: string = this.generateNonce();
+    await this.cacheManager.set(dto.publicKey, nonce);
     return {
       publicKey: dto.publicKey,
       nonce,
@@ -135,7 +135,7 @@ export class AuthService {
   }
 
   private generateNonce(): string {
-    const payload = randomBytes(32).toString('hex');
+    const payload: string = randomBytes(32).toString('hex');
     return `insight: ${payload}`;
   }
 }

@@ -4,12 +4,16 @@ import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
 import { AccountModule } from 'src/account/account.module';
 import { JwtStrategy } from './jwt.strategy';
+import { CacheModule } from '@nestjs/cache-manager';
 
 @Module({
   imports: [
     AccountModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET,
+    }),
+    CacheModule.register({
+      ttl: 30 * 60 * 1000, // 30 min in ms
     }),
   ],
   providers: [AuthService, JwtStrategy],
