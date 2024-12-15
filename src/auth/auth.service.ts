@@ -86,11 +86,6 @@ export class AuthService {
     });
   }
 
-  // TODO: delete for straight using in methods
-  private async getNonceByPublicKey(publicKey: string): Promise<string> {
-    return await this.cacheManager.get(publicKey);
-  }
-
   private async validateSignature(dto: ValidateSignatureDto) {
     const nonce: string = await this.cacheManager.get(dto.publicKey);
     if (!nonce) {
@@ -119,7 +114,7 @@ export class AuthService {
   private async generateNonceForPublicKey(
     dto: GetNonceDto,
   ): Promise<AccountCandidates> {
-    const existingNonce: string = await this.getNonceByPublicKey(dto.publicKey);
+    const existingNonce: string = await this.cacheManager.get(dto.publicKey);
     if (existingNonce) {
       return {
         publicKey: dto.publicKey,
